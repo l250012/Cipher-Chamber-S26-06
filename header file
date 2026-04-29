@@ -1,0 +1,184 @@
+#ifndef GAME_HEADER_H
+#define GAME_HEADER_H
+#include <SFML/Graphics.hpp>
+#include <iostream>
+#include <vector>
+using namespace std;
+class HeartGame;
+class Game;
+class GraphicsManager;
+//player class
+class Player
+{
+private:
+    int health;
+    int intelligence;
+    int stamina;
+
+public:
+    Player() : health(100), intelligence(50), stamina(50) {}
+    void takeDamage(int dmg);
+    void heal(int amount);
+    int getHealth() const;
+};
+// 1. UI Component
+struct MenuButton {
+    sf::RectangleShape box;
+    sf::Text label;
+
+    bool isHovered(sf::Vector2i mousePos);
+    void updateVisuals(sf::Vector2i mousePos);
+};
+// 2. Graphics Manager (Sirf Assets handle karega)
+class GraphicsManager {
+public:
+    sf::Font font;
+    sf::Text title;
+    MenuButton startBtn, exitBtn;
+
+    sf::Texture bgMenuTex, bgLevelTex;
+    sf::Sprite bgMenuSprite, bgLevelSprite;
+
+    sf::Texture doorTex1, doorTex2, doorTex3;
+    sf::Sprite door1, door2, door3;
+
+    GraphicsManager(); // Constructor
+    void loadMenuAssets();
+    void loadLevelAssets();
+};
+// health class
+class HealthSystem 
+{
+public:
+    static void applyDamage(Player& player, int dmg);
+    static void regenerate(Player& player);
+};
+// heart ki class
+class HeartGame {
+private:
+    sf::Texture bgTex; 
+    sf::Sprite background;
+
+    sf::RectangleShape playerBoxes[3];
+    sf::Text boxTexts[3];
+
+    sf::Clock transitionClock; //time tracking ke liye
+    bool isWaiting = false;
+    sf::Font font;
+    sf::Text message;
+    int imposterIndex;
+    bool gameOver;
+    sf::RectangleShape healthBarBack;
+    sf::RectangleShape healthBarFill;
+
+public:
+    HeartGame();
+    void loadAssets();
+    void updatehover(sf::Vector2f mousePos);
+    void handleClick(sf::Vector2f mousePos, Player& player);
+    void render(sf::RenderWindow& window, Player&player);
+    bool shouldReturnToMenu();
+};
+//Diamond Game Classes
+class Puzzle 
+{
+protected:
+    string questionText, correctAnswer, hint;
+    int damageOnFail;
+public:
+    Puzzle(const string& q, const string& ans, const string& h, int dmg);
+    virtual ~Puzzle() {}
+    virtual bool checkAnswer(const string& playerInput) const;
+    virtual string getPuzzleType() const = 0;
+    string getQuestion() const;
+    string getHint() const;
+    int getDamage() const;
+    static string normalize(const string& s);
+};
+class OutputPredictPuzzle : public Puzzle
+{
+public:
+    OutputPredictPuzzle(const string& code, const string& ans, const string& h, int dmg);
+    string getPuzzleType() const override { return "OUTPUT_PREDICT"; }
+};
+
+class DryRunPuzzle : public Puzzle
+{
+public:
+    DryRunPuzzle(const string& code, const string& ans, const string& h, int dmg);
+    string getPuzzleType() const override { return "DRY_RUN"; }
+};
+class TwoBlankPuzzle : public Puzzle
+{
+private:
+    string b1, b2, b3;
+    int currentBlank;
+public:
+    TwoBlankPuzzle(const string& code, const string& a1, const string& a2, const string& a3, const string& h, int dmg);
+    string getPuzzleType() const override { return "TWO_BLANK"; }
+    bool checkAnswer(const string& input) const override;
+    bool advanceBlank();
+    void resetBlanks() { currentBlank = 0; }
+    string getBlankPrompt() const;
+};
+struct Arena
+{
+    int arenaNumber;
+    string arenaName;
+    Puzzle* puzzle;
+    bool isCleared;
+    Arena(int num, const string& name, Puzzle* p) : arenaNumber(num), arenaName(name), puzzle(p), isCleared(false) {}
+};
+class DiamondGame 
+{
+private:
+    vector<Arena> arenas;
+    int currentArenaIndex;
+    bool challengeComplete;
+    void initArenas();
+    sf::Text questionDisplay;
+    sf::Text inputDisplay;
+    sf::Text arenaTitle;
+    sf::Sprite diamondBG;
+    sf::Texture diamondTex;
+    sf::RectangleShape inputBox; // Text ke peechay wala box
+    sf::RectangleShape questionBox; // Code display ke liye box
+    sf::RectangleShape completeBox; // Final message ke liye box
+
+public:
+    DiamondGame();
+    ~DiamondGame();
+    void startChallenge(Player& player);
+    bool submitAnswer(Player& player, const string& input);
+    Puzzle* getCurrentPuzzle() const;
+    bool isComplete() const 
+    {
+        return challengeComplete;
+    }
+    void loadVisuals(sf::Font& font);
+    void render(sf::RenderWindow& window, Player& player, const string& currentInput);
+    sf::Clock completionClock; // Time track karne ke liye
+    bool isWaitingToReturn = false;
+};
+// 3. Game Class (Logic aur State handle karegi)
+class Game {
+private:
+    sf::RenderWindow window;
+    enum GameState { MENU, LEVEL_SELECT, PLAYING, PLAYING_DIAMOND};
+    GameState currentState;
+    GraphicsManager gfx; // Composition: GraphicsManager ka object
+    HeartGame heartGame;
+    string playerInputString;//for diamond game
+    DiamondGame diamondGame;
+    //functions
+    void processEvents();
+    void update();
+    void render();
+    Player player;
+    
+
+public:
+    Game();
+    void run();
+};
+#endif
