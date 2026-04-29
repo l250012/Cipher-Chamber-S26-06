@@ -1,0 +1,285 @@
+#pragma once
+#include "Card.h"
+#include "playerclass.h"
+#include "HealthSystem.h"
+#include <string>
+#include <vector>
+#include <cctype>
+
+using namespace std;
+
+// ================================================================
+// DiamondGame — COMBINED HEADER + IMPLEMENTATION
+// ================================================================
+
+
+// ────────────────────────────────────────────────────────────────
+// Puzzle — abstract base
+// ────────────────────────────────────────────────────────────────
+class Puzzle {
+protected:
+    string questionText;
+    string correctAnswer;
+    string hint;
+    int damageOnFail;
+
+public:
+    Puzzle(const string& q, const string& ans,
+           const string& h, int dmg);
+
+    virtual ~Puzzle() {}
+
+    virtual bool checkAnswer(const string& playerInput) const;
+    virtual string getPuzzleType() const = 0;
+
+    string getQuestion() const;
+    string getHint() const;
+    string getAnswer() const;
+    int getDamage() const;
+
+protected:
+    static string normalize(const string& s);
+};
+
+
+// ────────────────────────────────────────────────────────────────
+// OutputPredictPuzzle
+// ────────────────────────────────────────────────────────────────
+class OutputPredictPuzzle : public Puzzle {
+public:
+    OutputPredictPuzzle(const string& code, const string& ans,
+                        const string& h, int dmg);
+
+    string getPuzzleType() const override;
+    string getInstructions() const;
+};
+
+
+// ────────────────────────────────────────────────────────────────
+// DryRunPuzzle
+// ────────────────────────────────────────────────────────────────
+class DryRunPuzzle : public Puzzle {
+private:
+    string tracedVariable;
+
+public:
+    DryRunPuzzle(const string& code, const string& ans,
+                 const string& h, int dmg, const string& varName);
+
+    string getPuzzleType() const override;
+    string getTracedVariable() const;
+    string getInstructions() const;
+};
+
+
+// ────────────────────────────────────────────────────────────────
+// TwoBlankPuzzle
+// ────────────────────────────────────────────────────────────────
+class TwoBlankPuzzle : public Puzzle {
+private:
+    string blank1A;
+    string blank1B;
+    string blank2;
+    int currentBlank;
+
+public:
+    TwoBlankPuzzle(const string& code,
+                   const string& b1a, const string& b1b,
+                   const string& b2,
+                   const string& h, int dmg);
+
+    string getPuzzleType() const override;
+    string getInstructions() const override;
+    bool checkAnswer(const string& playerInput) const override;
+    bool advanceBlank();
+    void resetBlanks();
+    int getCurrentBlank() const;
+    string getBlankPrompt() const;
+};
+
+
+// ────────────────────────────────────────────────────────────────
+// Arena struct
+// ────────────────────────────────────────────────────────────────
+struct Arena {
+    int arenaNumber;
+    string arenaName;
+    Puzzle* puzzle;
+    bool isCleared;
+    int hpSnapshot;
+
+    Arena(int num, const string& name, Puzzle* p);
+};
+
+
+// ────────────────────────────────────────────────────────────────
+// DiamondGame
+// ────────────────────────────────────────────────────────────────
+class DiamondGame : public Card {
+private:
+    vector<Arena> arenas;
+    int currentArenaIndex;
+    bool challengeComplete;
+    bool arenaRestarted;
+    int wrongAttemptsThisArena;
+
+    void initArenas();
+    void restartCurrentArena(Player& player);
+
+public:
+    DiamondGame();
+    ~DiamondGame();
+
+    void startChallenge(Player& player) override;
+    bool submitAnswer(Player& player, const string& input);
+
+    Puzzle* getCurrentPuzzle() const;
+    const Arena* getCurrentArena() const;
+
+    bool wasArenaRestarted();
+    int getWrongAttempts() const;
+    int getCurrentArenaIndex() const;
+    int getTotalArenas() const;
+    bool isChallengeComplete() const;
+
+    string getCurrentBlankPrompt() const;
+    string getSuit() const;
+};
+
+
+// ================================================================
+// IMPLEMENTATION SECTION (UNCHANGED LOGIC)
+// ================================================================
+
+// ────────────────────────────────────────────────────────────────
+// Puzzle
+// ────────────────────────────────────────────────────────────────
+
+Puzzle::Puzzle(const string& q, const string& ans,
+               const string& h, int dmg)
+    : questionText(q), correctAnswer(ans), hint(h), damageOnFail(dmg) {}
+
+string Puzzle::normalize(const string& s) {
+    string result = s;
+    while (!result.empty() && result.front() == ' ')
+        result.erase(result.begin());
+    while (!result.empty() && result.back() == ' ')
+        result.pop_back();
+
+    for (char& c : result)
+        c = tolower(c);
+
+    return result;
+}
+
+bool Puzzle::checkAnswer(const string& playerInput) const {
+    return normalize(playerInput) == normalize(correctAnswer);
+}
+
+string Puzzle::getQuestion() const { return questionText; }
+string Puzzle::getHint() const { return hint; }
+string Puzzle::getAnswer() const { return correctAnswer; }
+int Puzzle::getDamage() const { return damageOnFail; }
+
+
+// ────────────────────────────────────────────────────────────────
+// OutputPredictPuzzle
+// ────────────────────────────────────────────────────────────────
+
+OutputPredictPuzzle::OutputPredictPuzzle(const string& code, const string& ans,
+                                         const string& h, int dmg)
+    : Puzzle(code, ans, h, dmg) {}
+
+string OutputPredictPuzzle::getPuzzleType() const {
+    return "OUTPUT_PREDICT";
+}
+
+string OutputPredictPuzzle::getInstructions() const {
+    return "Read the code carefully. What does it print? Type the exact output.";
+}
+
+
+// ────────────────────────────────────────────────────────────────
+// DryRunPuzzle
+// ────────────────────────────────────────────────────────────────
+
+DryRunPuzzle::DryRunPuzzle(const string& code, const string& ans,
+                           const string& h, int dmg, const string& varName)
+    : Puzzle(code, ans, h, dmg), tracedVariable(varName) {}
+
+string DryRunPuzzle::getPuzzleType() const {
+    return "DRY_RUN";
+}
+
+string DryRunPuzzle::getTracedVariable() const {
+    return tracedVariable;
+}
+
+string DryRunPuzzle::getInstructions() const {
+    return "Trace every line. What gets printed to the console?";
+}
+
+
+// ────────────────────────────────────────────────────────────────
+// TwoBlankPuzzle
+// ────────────────────────────────────────────────────────────────
+
+TwoBlankPuzzle::TwoBlankPuzzle(const string& code,
+                               const string& b1a, const string& b1b,
+                               const string& b2,
+                               const string& h, int dmg)
+    : Puzzle(code, "see blanks", h, dmg),
+      blank1A(b1a), blank1B(b1b), blank2(b2), currentBlank(0) {}
+
+string TwoBlankPuzzle::getPuzzleType() const {
+    return "TWO_BLANK";
+}
+
+string TwoBlankPuzzle::getInstructions() const {
+    return "Fill in each blank one at a time. Press Enter after each answer.";
+}
+
+bool TwoBlankPuzzle::checkAnswer(const string& playerInput) const {
+    string input = normalize(playerInput);
+
+    if (currentBlank == 0) return input == normalize(blank1A);
+    if (currentBlank == 1) return input == normalize(blank1B);
+    if (currentBlank == 2) return input == normalize(blank2);
+
+    return false;
+}
+
+bool TwoBlankPuzzle::advanceBlank() {
+    if (currentBlank < 2) {
+        currentBlank++;
+        return false;
+    }
+    return true;
+}
+
+void TwoBlankPuzzle::resetBlanks() {
+    currentBlank = 0;
+}
+
+int TwoBlankPuzzle::getCurrentBlank() const {
+    return currentBlank;
+}
+
+string TwoBlankPuzzle::getBlankPrompt() const {
+    if (currentBlank == 0)
+        return "Blank 1A > if(n <= ___)";
+    if (currentBlank == 1)
+        return "Blank 1B > return ___";
+    if (currentBlank == 2)
+        return "Blank 2 > factorial(___)";
+    return "Done";
+}
+
+
+// ────────────────────────────────────────────────────────────────
+// Arena
+// ────────────────────────────────────────────────────────────────
+
+Arena::Arena(int num, const string& name, Puzzle* p)
+    : arenaNumber(num), arenaName(name),
+      puzzle(p), isCleared(false), hpSnapshot(100) {}
