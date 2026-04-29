@@ -1,0 +1,585 @@
+#include "GameHeader.h"
+//MenuButton ki Logic 
+bool MenuButton::isHovered(sf::Vector2i mousePos) 
+{
+    return box.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePos));
+}
+void MenuButton::updateVisuals(sf::Vector2i mousePos) 
+{
+    if (isHovered(mousePos)) 
+    {
+        box.setOutlineColor(sf::Color::Red);
+        box.setOutlineThickness(3);
+    }
+    else 
+    {
+        box.setOutlineColor(sf::Color::White);
+        box.setOutlineThickness(1);
+    }
+}
+// player class
+void Player::takeDamage(int dmg)
+{
+    health -= dmg;
+    if (health < 0) health = 0;
+}
+void Player::heal(int amount)
+{
+    health += amount;
+    if (health > 100) health = 100;
+}
+int Player::getHealth() const
+{
+    return health;
+}
+// health class
+void HealthSystem::applyDamage(Player& player, int dmg)
+{
+    player.takeDamage(dmg);
+}
+void HealthSystem::regenerate(Player& player) 
+{
+    player.heal(1);
+}
+// GraphicsManager Logic 
+GraphicsManager::GraphicsManager()
+{
+    if (!font.loadFromFile("arial.ttf")) 
+        cout << "Font loading failed!" << endl;
+}
+void GraphicsManager::loadMenuAssets() 
+{
+    bgMenuTex.loadFromFile("menu background.png");
+    bgMenuSprite.setTexture(bgMenuTex);
+    bgMenuSprite.setScale(1280.0f / bgMenuSprite.getGlobalBounds().width, 720.0f / bgMenuSprite.getGlobalBounds().height);
+    title.setFont(font);
+    title.setString("CIPHER CHAMBER");
+    title.setCharacterSize(80);
+    title.setPosition(320, 80);
+    float btnWidth = 400.0f;
+    float btnHeight = 70.0f;
+    float centerX = (1280.0f - btnWidth) / 2.0f;
+    // Start Button
+    startBtn.box.setSize({ btnWidth, btnHeight });
+    startBtn.box.setPosition(centerX, 300);
+    startBtn.box.setFillColor(sf::Color(0, 0, 0, 150));
+    startBtn.label.setFont(font);
+    startBtn.label.setString("ENTER BORDERLAND");
+    startBtn.label.setCharacterSize(30);
+    sf::FloatRect sRect = startBtn.label.getLocalBounds();
+    startBtn.label.setOrigin(sRect.left + sRect.width / 2.0f, sRect.top + sRect.height / 2.0f);
+    startBtn.label.setPosition(centerX + (btnWidth / 2.0f), 300 + (btnHeight / 2.0f));
+    // Exit Button
+    exitBtn.box.setSize({ btnWidth, btnHeight });
+    exitBtn.box.setPosition(centerX, 420);
+    exitBtn.box.setFillColor(sf::Color(0, 0, 0, 150));
+    exitBtn.label.setFont(font);
+    exitBtn.label.setString("EXIT");
+    exitBtn.label.setCharacterSize(30);
+    sf::FloatRect eRect = exitBtn.label.getLocalBounds();
+    exitBtn.label.setOrigin(eRect.left + eRect.width / 2.0f, eRect.top + eRect.height / 2.0f);
+    exitBtn.label.setPosition(centerX + (btnWidth / 2.0f), 420 + (btnHeight / 2.0f));
+}
+void GraphicsManager::loadLevelAssets()
+{
+    bgLevelTex.loadFromFile("doors background.png");       //doors ke liye
+    bgLevelSprite.setTexture(bgLevelTex);
+    bgLevelSprite.setScale(1280.0f / bgLevelSprite.getGlobalBounds().width, 720.0f / bgLevelSprite.getGlobalBounds().height);
+    doorTex1.loadFromFile("spades.png"); door1.setTexture(doorTex1);
+    doorTex2.loadFromFile("hearts.png"); door2.setTexture(doorTex2);
+    doorTex3.loadFromFile("diamond.png"); door3.setTexture(doorTex3);
+    sf::Sprite* doors[] = { &door1, &door2, &door3 };
+    float positions[] = { 0.20f, 0.50f, 0.80f };
+    for (int i = 0; i < 3; i++) 
+    {
+        doors[i]->setOrigin(doors[i]->getLocalBounds().width / 2.f, doors[i]->getLocalBounds().height / 2.f);
+        doors[i]->setScale(0.5f, 0.5f);
+        doors[i]->setPosition(1280.0f * positions[i], 350.0f);
+    }
+}
+
+// Game Logic
+Game::Game() : window(sf::VideoMode(1280, 720), "Cipher Chamber") 
+{
+    currentState = MENU;
+    gfx.loadMenuAssets();
+    gfx.loadLevelAssets();
+    
+}
+void Game::run()
+{
+    while (window.isOpen()) 
+    {
+        processEvents();
+        update();
+        render();
+    }
+}
+void Game::processEvents()
+{
+    sf::Event event;
+    while (window.pollEvent(event))
+    {
+        // 1. Window Close Logic
+        if (event.type == sf::Event::Closed)
+            window.close();
+
+        // 2. Keyboard Input (Sirf Diamond Game ke liye)
+        if (currentState == PLAYING_DIAMOND && event.type == sf::Event::TextEntered)
+        {
+            if (event.text.unicode == 8) // Backspace
+            {
+                if (!playerInputString.empty())
+                    playerInputString.pop_back();
+            }
+            else if (event.text.unicode == 13) // Enter (Jawab Submit karein)
+            {
+                diamondGame.submitAnswer(player, playerInputString);
+                playerInputString.clear();
+            }
+            else if (event.text.unicode < 128) // Valid ASCII characters
+            {
+                playerInputString += static_cast<char>(event.text.unicode);
+            }
+        }
+        if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left)
+        {
+            sf::Vector2i mousePos = sf::Mouse::getPosition(window);
+            sf::Vector2f mousePosF = static_cast<sf::Vector2f>(mousePos);
+
+            switch (currentState)
+            {
+            case MENU:
+                if (gfx.startBtn.isHovered(mousePos))
+                    currentState = LEVEL_SELECT;
+                else if (gfx.exitBtn.isHovered(mousePos))
+                    window.close();
+                break;
+
+            case LEVEL_SELECT:
+                // Door 1: Spades (Abhi empty hai)
+                if (gfx.door1.getGlobalBounds().contains(mousePosF)) {
+                    cout << "Spades coming soon!" << endl;
+                }
+                // Door 2: Heart Game
+                else if (gfx.door2.getGlobalBounds().contains(mousePosF)) {
+                    heartGame.loadAssets();
+                    currentState = PLAYING;
+                }
+                // Door 3: Diamond Game
+                else if (gfx.door3.getGlobalBounds().contains(mousePosF)) {
+                    diamondGame.startChallenge(player); 
+                    diamondGame.loadVisuals(gfx.font);
+                    playerInputString.clear();
+                    currentState = PLAYING_DIAMOND;
+                }
+                break;
+
+            case PLAYING: // Heart Game
+                heartGame.handleClick(mousePosF, player);
+                break;
+
+            default:
+                break;
+            }
+        }
+    }
+}
+void Game::update()
+{
+    sf::Vector2i mousePos = sf::Mouse::getPosition(window);
+    sf::Vector2f mousePosF = static_cast<sf::Vector2f>(mousePos);
+    if (currentState == PLAYING)
+    {
+        heartGame.updatehover(mousePosF);
+        if (heartGame.shouldReturnToMenu())
+        {
+            currentState = LEVEL_SELECT;
+        }
+    }
+    else if (currentState == MENU)
+    {
+        gfx.startBtn.updateVisuals(mousePos);
+        gfx.exitBtn.updateVisuals(mousePos);
+    }
+    else if (currentState == LEVEL_SELECT)
+    {
+        sf::Sprite* doors[] = { &gfx.door1, &gfx.door2, &gfx.door3 };
+        for (auto d : doors)
+        {
+            if (d->getGlobalBounds().contains(mousePosF))
+            {
+                d->setColor(sf::Color::White);
+                d->setScale(0.55f, 0.55f);
+            }
+            else
+            {
+                d->setColor(sf::Color(150, 150, 150)); 
+                d->setScale(0.5f, 0.5f);
+            }
+        }
+    }
+    if (currentState == PLAYING_DIAMOND)
+    {
+        if (diamondGame.isComplete() && diamondGame.completionClock.getElapsedTime().asSeconds() >= 3.0f)
+        {
+            currentState = LEVEL_SELECT; 
+        }
+    }
+    if (player.getHealth() <= 0) 
+    {
+        cout << "GAME OVER!";
+        window.close(); 
+    }
+}
+void Game::render()
+{
+    window.clear();
+    if (currentState == MENU) 
+    {
+        window.draw(gfx.bgMenuSprite);
+        window.draw(gfx.title);
+        window.draw(gfx.startBtn.box);
+        window.draw(gfx.startBtn.label);
+        window.draw(gfx.exitBtn.box);
+        window.draw(gfx.exitBtn.label);
+    }
+    else if (currentState == LEVEL_SELECT)
+    {
+        window.draw(gfx.bgLevelSprite);
+        window.draw(gfx.door1);
+        window.draw(gfx.door2);
+        window.draw(gfx.door3);
+    }
+    else if (currentState == PLAYING) {
+        heartGame.render(window, player); 
+    }
+    else if (currentState == PLAYING_DIAMOND) 
+    {
+        diamondGame.render(window, player, playerInputString);
+    }
+    window.display();
+}
+//heart class
+HeartGame::HeartGame() 
+{
+    srand((unsigned)time(0));
+    imposterIndex = rand() % 3;
+    gameOver = false;
+ 
+}
+void HeartGame::loadAssets()
+{
+    gameOver = false;   
+    isWaiting = false;
+    message.setString("");
+    if (!bgTex.loadFromFile("heartorg.png"))
+    {
+        std::cout << "Background image loading failed!" << std::endl;
+    }
+    background.setTexture(bgTex);
+    background.setScale(1280.0f / background.getLocalBounds().width,   // Screen Resolution 1280x720 ke liye scale set karein
+        720.0f / background.getLocalBounds().height);
+    healthBarBack.setSize(sf::Vector2f(200.0f, 20.0f));
+    healthBarBack.setFillColor(sf::Color(50, 50, 50)); 
+    healthBarBack.setPosition(50.0f, 50.0f);
+
+    // Bhara hua bar (Fill)
+    healthBarFill.setFillColor(sf::Color::Red);
+    healthBarFill.setPosition(50.0f, 50.0f);
+    if (!font.loadFromFile("arial.ttf"))
+    {
+        std::cout << "Font loading failed!" << std::endl;
+    }
+    string dialogues[] = { "I'm innocent", "Trust me!", "He's the liar!" };
+    float posX[] = { 400.0f, 650.0f, 900.0f }; //inki positions
+    float posY = 260.0f;
+    for (int i = 0; i < 3; i++)
+    {
+        playerBoxes[i].setSize(sf::Vector2f(140.0f, 45.0f));
+        playerBoxes[i].setFillColor(sf::Color(0, 0, 0, 180)); 
+        playerBoxes[i].setOutlineColor(sf::Color::White);
+        playerBoxes[i].setOutlineThickness(2.0f);
+        playerBoxes[i].setOrigin(70.0f, 22.5f);
+        playerBoxes[i].setPosition(posX[i], posY);
+        boxTexts[i].setFont(font);
+        boxTexts[i].setString(dialogues[i]);
+        boxTexts[i].setCharacterSize(18);
+        boxTexts[i].setFillColor(sf::Color::White);
+        sf::FloatRect textRect = boxTexts[i].getLocalBounds();
+        boxTexts[i].setOrigin(textRect.left + textRect.width / 2.0f,
+            textRect.top + textRect.height / 2.0f);
+        boxTexts[i].setPosition(posX[i], posY);
+    }
+    message.setFont(font);
+    message.setCharacterSize(40);
+    message.setFillColor(sf::Color::White);
+    message.setStyle(sf::Text::Bold);
+    message.setString("");
+    message.setPosition(400.0f, 100.0f);
+}
+void HeartGame::updatehover(sf::Vector2f mousePos)
+{
+    for (int i = 0; i < 3; i++)
+    {
+        if (playerBoxes[i].getGlobalBounds().contains(mousePos))
+        {
+            playerBoxes[i].setOutlineColor(sf::Color::Red);
+        }
+        else
+        {
+            playerBoxes[i].setOutlineColor(sf::Color::White);
+        }
+    }
+}
+void HeartGame::handleClick(sf::Vector2f mousePos, Player& player)
+{
+    if (gameOver || isWaiting) 
+        return; 
+    for (int i = 0; i < 3; i++)
+    {
+        if (playerBoxes[i].getGlobalBounds().contains(mousePos))
+        {
+            if (i == imposterIndex)
+                message.setString("Correct! You found the liar.");
+            else
+            {
+                message.setString("Wrong! That person was innocent.");
+                HealthSystem::applyDamage(player, 20);
+                cout << "Health Reduced! Current Health: " << player.getHealth() << endl;
+            }
+
+            gameOver = true;
+            isWaiting = true;       
+            transitionClock.restart(); 
+        }
+    }
+}
+void HeartGame::render(sf::RenderWindow& window, Player &player)
+{
+    window.draw(background); 
+    float healthPercentage = static_cast<float>(player.getHealth()) / 100.0f;
+    healthBarFill.setSize(sf::Vector2f(200.0f * healthPercentage, 20.0f));
+
+    window.draw(healthBarBack);
+    window.draw(healthBarFill);
+    for (int i = 0; i < 3; i++)
+    {
+        window.draw(playerBoxes[i]); 
+        window.draw(boxTexts[i]); 
+    }
+    if (gameOver) 
+    {
+        window.draw(message);
+    }
+}
+bool HeartGame::shouldReturnToMenu() 
+{
+    if (isWaiting && transitionClock.getElapsedTime().asSeconds() >= 3.0f)
+    {
+        isWaiting = true; 
+        gameOver = true;  
+        return true;
+    }
+    return false;
+}
+Puzzle::Puzzle(const string& q, const string& ans, const string& h, int dmg)
+    : questionText(q), correctAnswer(ans), hint(h), damageOnFail(dmg) {
+}
+// diamond game
+string Puzzle::normalize(const string& s) 
+{
+    string res = s;
+    res.erase(0, res.find_first_not_of(" "));
+    res.erase(res.find_last_not_of(" ") + 1);
+    for (char& c : res) c = tolower(c);
+    return res;
+}
+bool Puzzle::checkAnswer(const string& input) const 
+{
+    return normalize(input) == normalize(correctAnswer);
+}
+// DiamondGame
+DiamondGame::DiamondGame() : currentArenaIndex(0), challengeComplete(false)
+{
+    initArenas();
+}
+void DiamondGame::initArenas() 
+{
+    // Arena 1: Pointer Arithmetic
+    arenas.push_back(Arena(1, "Entry Room", new OutputPredictPuzzle("int arr[]={10,20,30,40,50};\ncout<<*(ptr+2)<<\" \"<<*(ptr+4);", "30 50", "Check arr[2] and arr[4]", 10)));
+
+    // Arena 2: Loop Logic
+    arenas.push_back(Arena(2, "Mid Room", new DryRunPuzzle("for(int i=0;i<8;i++){\nif(i%2==0) continue;\nif(i==5) break;\ncout<<i<<\" \";}", "1 3", "Odd numbers before 5", 20)));
+
+    arenas.push_back(Arena(3, "Boss Room", new OutputPredictPuzzle("int fact(int n){\nif(n<=___) return ___;\nreturn n*fact(___);}","1 1 n-1","Base case 1, return 1, recurse n-1", 30)));
+}
+
+DiamondGame::~DiamondGame()
+{
+    for (auto& a : arenas) delete a.puzzle;
+}
+void DiamondGame::startChallenge(Player& player) 
+{
+    currentArenaIndex = 0;
+    challengeComplete = false;
+    for (auto& a : arenas)
+        a.isCleared = false;
+}
+bool DiamondGame::submitAnswer(Player& player, const string& input)
+{
+    if (currentArenaIndex >= arenas.size()) 
+        return false;
+
+    Puzzle* p = arenas[currentArenaIndex].puzzle;
+    if (p->checkAnswer(input)) 
+    {
+        arenas[currentArenaIndex].isCleared = true;
+        currentArenaIndex++;
+
+        HealthSystem::regenerate(player);
+        if (currentArenaIndex >= arenas.size())
+        {
+            challengeComplete = true;
+            isWaitingToReturn = true;
+            completionClock.restart();
+        }
+        return true;
+    }
+    else 
+    {
+        HealthSystem::applyDamage(player, p->getDamage());
+        return false;
+    }
+}
+Puzzle* DiamondGame::getCurrentPuzzle() const 
+{
+    if (currentArenaIndex < arenas.size()) 
+        return arenas[currentArenaIndex].puzzle;
+    return nullptr;
+}
+void DiamondGame::render(sf::RenderWindow& window, Player& player, const string& currentInput)
+{
+    // 1. Background draw karein
+    window.draw(diamondBG);
+
+    // 2. Health Bar (Wahi logic jo Heart Game mein thi)
+    float healthPercentage = static_cast<float>(player.getHealth()) / 100.0f;
+    sf::RectangleShape healthBarBack(sf::Vector2f(200.0f, 20.0f));
+    healthBarBack.setFillColor(sf::Color(50, 50, 50));
+    healthBarBack.setPosition(50.0f, 50.0f);
+
+
+    sf::RectangleShape healthBarFill(sf::Vector2f(200.0f * healthPercentage, 20.0f));
+    healthBarFill.setFillColor(sf::Color::Cyan); // Diamond game ke liye Cyan color
+    healthBarFill.setPosition(50.0f, 50.0f);
+
+    window.draw(healthBarBack);
+    window.draw(healthBarFill);
+
+    // 3. Current Arena aur Question display karein
+    Puzzle* currentPuzzle = getCurrentPuzzle();
+    if (currentPuzzle)
+    {
+        // Arena Title 
+        arenaTitle.setString("ARENA " + to_string(currentArenaIndex + 1));
+        window.draw(arenaTitle);
+        // Question/Code Display
+        window.draw(questionBox);
+        questionDisplay.setString(currentPuzzle->getQuestion());
+        window.draw(questionDisplay);
+        // Input Text draw hoga yahan
+        window.draw(inputBox);
+        inputDisplay.setString("> " + currentInput + "_");
+        window.draw(inputDisplay);
+        inputDisplay.setString("> " + currentInput + "_");
+        window.draw(inputDisplay);
+    }
+    else if (challengeComplete)
+    {
+        window.draw(completeBox);
+        arenaTitle.setString("CHALLENGE COMPLETE!");
+        arenaTitle.setPosition(400.0f, 340.0f);
+        arenaTitle.setFillColor(sf::Color(0, 255, 0)); 
+        window.draw(arenaTitle);
+    }
+}
+OutputPredictPuzzle::OutputPredictPuzzle(const string& code, const string& ans, const string& h, int dmg)
+    : Puzzle(code, ans, h, dmg) {
+}
+
+DryRunPuzzle::DryRunPuzzle(const string& code, const string& ans, const string& h, int dmg)
+    : Puzzle(code, ans, h, dmg) {
+}
+
+TwoBlankPuzzle::TwoBlankPuzzle(const string& code, const string& a1, const string& a2, const string& a3, const string& h, int dmg)
+    : Puzzle(code, "multi-blank", h, dmg), b1(a1), b2(a2), b3(a3), currentBlank(0) {
+}
+
+bool TwoBlankPuzzle::checkAnswer(const string& input) const
+{
+    string target = (currentBlank == 0) ? b1 : (currentBlank == 1) ? b2 : b3;
+    return normalize(input) == normalize(target);
+}
+
+bool TwoBlankPuzzle::advanceBlank() 
+{
+    currentBlank++;
+    return (currentBlank >= 3); 
+}
+string TwoBlankPuzzle::getBlankPrompt() const 
+{
+    if (currentBlank == 0) 
+        return "Fill Blank 1...";
+    if (currentBlank == 1)
+        return "Fill Blank 2...";
+    return "Fill Blank 3...";
+}
+
+string Puzzle::getQuestion() const 
+{
+    return questionText;
+}
+string Puzzle::getHint() const 
+{
+    return hint; 
+}
+int Puzzle::getDamage() const
+{
+    return damageOnFail;
+}
+void DiamondGame::loadVisuals(sf::Font& font)
+{
+    diamondTex.loadFromFile("diamondorg.png"); 
+    diamondBG.setTexture(diamondTex);
+
+    arenaTitle.setFont(font);
+    arenaTitle.setCharacterSize(40);
+    arenaTitle.setPosition(540, 20); 
+
+    questionDisplay.setFont(font);
+    questionDisplay.setCharacterSize(22);
+    questionDisplay.setPosition(100, 150);
+
+    inputDisplay.setFont(font);
+    inputDisplay.setCharacterSize(30);
+    inputDisplay.setFillColor(sf::Color::Yellow);
+    inputDisplay.setPosition(100, 500);
+    //boxes ke liye
+    inputBox.setSize(sf::Vector2f(600.0f, 50.0f)); 
+    inputBox.setFillColor(sf::Color(0, 0, 0, 180)); 
+    inputBox.setOutlineColor(sf::Color::Cyan);      
+    inputBox.setOutlineThickness(2.0f);
+    inputBox.setPosition(90.0f, 495.0f);
+    questionBox.setSize(sf::Vector2f(1080.0f, 300.0f)); 
+    questionBox.setFillColor(sf::Color(20, 20, 20, 200)); 
+    questionBox.setOutlineColor(sf::Color(0, 255, 255, 100)); 
+    questionBox.setOutlineThickness(1.0f);
+    questionBox.setPosition(80.0f, 130.0f);
+    // complete challenge ke liye
+    completeBox.setSize(sf::Vector2f(700.0f, 150.0f));
+    completeBox.setFillColor(sf::Color(0, 0, 0, 220)); 
+    completeBox.setOutlineColor(sf::Color(0, 255, 0)); 
+    completeBox.setOutlineThickness(3.0f);
+    completeBox.setPosition(290.0f, 285.0f);
+}
