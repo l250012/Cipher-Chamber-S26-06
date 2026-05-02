@@ -21,12 +21,14 @@ void MenuButton::updateVisuals(sf::Vector2i mousePos)
 void Player::takeDamage(int dmg)
 {
     health -= dmg;
-    if (health < 0) health = 0;
+    if (health < 0)
+        health = 0;
 }
 void Player::heal(int amount)
 {
     health += amount;
-    if (health > 100) health = 100;
+    if (health > 100) 
+        health = 100;
 }
 int Player::getHealth() const
 {
@@ -41,11 +43,22 @@ void HealthSystem::regenerate(Player& player)
 {
     player.heal(1);
 }
+ void HealthSystem::applyFatalDamage(int& lives) {
+    if (lives > 0) {
+        lives--;
+        std::cout << "Life Lost! Remaining: " << lives << std::endl;
+    }
+}
 // GraphicsManager Logic 
 GraphicsManager::GraphicsManager()
 {
     if (!font.loadFromFile("arial.ttf")) 
         cout << "Font loading failed!" << endl;
+    if (lifeTexture.loadFromFile("live.png")) {
+        lifeIconSprite.setTexture(lifeTexture);
+        lifeIconSprite.setScale(0.15f, 0.15f);
+    }
+    lifeIconSprite.setTexture(lifeTexture);
 }
 void GraphicsManager::loadMenuAssets() 
 {
@@ -82,28 +95,40 @@ void GraphicsManager::loadMenuAssets()
 }
 void GraphicsManager::loadLevelAssets()
 {
-    bgLevelTex.loadFromFile("doors background.png");       //doors ke liye
+    bgLevelTex.loadFromFile("doors background.png");
     bgLevelSprite.setTexture(bgLevelTex);
     bgLevelSprite.setScale(1280.0f / bgLevelSprite.getGlobalBounds().width, 720.0f / bgLevelSprite.getGlobalBounds().height);
-    doorTex1.loadFromFile("spades.png"); door1.setTexture(doorTex1);
-    doorTex2.loadFromFile("hearts.png"); door2.setTexture(doorTex2);
-    doorTex3.loadFromFile("diamond.png"); door3.setTexture(doorTex3);
-    sf::Sprite* doors[] = { &door1, &door2, &door3 };
-    float positions[] = { 0.20f, 0.50f, 0.80f };
-    for (int i = 0; i < 3; i++) 
+    doorTex1.loadFromFile("club door.png");   
+    door1.setTexture(doorTex1);
+    doorTex2.loadFromFile("heart door.png");   
+    door2.setTexture(doorTex2);
+    doorTex3.loadFromFile("diamond door.png"); 
+    door3.setTexture(doorTex3);
+    doorTex4.loadFromFile("spades door.png");  
+    door4.setTexture(doorTex4);
+    sf::Sprite* doors[] = { &door1, &door2, &door3, &door4 };
+    float positions[] = { 0.20f, 0.40f, 0.60f, 0.80f };
+    for (int i = 0; i < 4; i++) 
     {
         doors[i]->setOrigin(doors[i]->getLocalBounds().width / 2.f, doors[i]->getLocalBounds().height / 2.f);
         doors[i]->setScale(0.5f, 0.5f);
         doors[i]->setPosition(1280.0f * positions[i], 350.0f);
     }
 }
+void GraphicsManager::drawLives(sf::RenderWindow& window, int lives) {
+    for (int i = 0; i < lives; i++) {
+        lifeIconSprite.setPosition(10.0f + (i * 55.0f), 20.0f);
+        window.draw(lifeIconSprite);
+    }
+}
 
 // Game Logic
-Game::Game() : window(sf::VideoMode(1280, 720), "Cipher Chamber") 
+Game::Game() : window(sf::VideoMode(1280, 720), "Cipher Chamber") ,totalLives(4)
 {
     currentState = MENU;
     gfx.loadMenuAssets();
     gfx.loadLevelAssets();
+    initGameOver();
     
 }
 void Game::run()
@@ -132,20 +157,22 @@ void Game::processEvents()
                 if (!playerInputString.empty())
                     playerInputString.pop_back();
             }
-            else if (event.text.unicode == 13) // Enter (Jawab Submit karein)
+            else if (event.text.unicode == 13) // Enter
             {
                 diamondGame.submitAnswer(player, playerInputString);
                 playerInputString.clear();
             }
-            else if (event.text.unicode < 128) // Valid ASCII characters
+            else if (event.text.unicode < 128) // Valid ASCII
             {
                 playerInputString += static_cast<char>(event.text.unicode);
             }
         }
+
+        // 3. Mouse Click Handling
         if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left)
         {
             sf::Vector2i mousePos = sf::Mouse::getPosition(window);
-            sf::Vector2f mousePosF = static_cast<sf::Vector2f>(mousePos);
+            sf::Vector2f mousePosF = window.mapPixelToCoords(mousePos);
 
             switch (currentState)
             {
@@ -157,28 +184,54 @@ void Game::processEvents()
                 break;
 
             case LEVEL_SELECT:
-                // Door 1: Spades (Abhi empty hai)
+                // Door 1: Club Game (Spades Door)
                 if (gfx.door1.getGlobalBounds().contains(mousePosF)) {
-                    cout << "Spades coming soon!" << endl;
+                    clubGame.initPlayers(player, npc1, npc2); // Players link karein
+                    clubGame.loadAssets(gfx.font);           // Assets load karein
+                    currentState = PLAYING_CLUB;
                 }
                 // Door 2: Heart Game
                 else if (gfx.door2.getGlobalBounds().contains(mousePosF)) {
                     heartGame.loadAssets();
-                    currentState = PLAYING;
+                    currentState = Heart_Playing;
                 }
                 // Door 3: Diamond Game
                 else if (gfx.door3.getGlobalBounds().contains(mousePosF)) {
-                    diamondGame.startChallenge(player); 
+                    diamondGame.startChallenge(player);
                     diamondGame.loadVisuals(gfx.font);
                     playerInputString.clear();
                     currentState = PLAYING_DIAMOND;
                 }
                 break;
 
-            case PLAYING: // Heart Game
-                heartGame.handleClick(mousePosF, player);
+            case Heart_Playing: // Heart Game
+                heartGame.handleClick(mousePosF, player, *this);
                 break;
 
+            case PLAYING_CLUB:
+                // Club Game ke buttons check karein
+                if (clubGame.btnPress.getGlobalBounds().contains(mousePosF))
+                    clubGame.inputChoice("P");
+                else if (clubGame.btnHold.getGlobalBounds().contains(mousePosF))
+                    clubGame.inputChoice("H");
+                else if (clubGame.btnRelease.getGlobalBounds().contains(mousePosF))
+                    clubGame.inputChoice("R");
+                break;
+            case GAME_OVER:
+            {
+                sf::Vector2i mousePos = sf::Mouse::getPosition(window);
+                if (restartButton.isHovered(mousePos)) // actual mein exit button ki hai
+                {
+                    window.close();
+                }
+                else if (menuButton.isHovered(mousePos))
+                {
+                    totalLives = 4;
+                    player.heal(100);
+                    currentState = MENU;
+                }
+            }
+                break;
             default:
                 break;
             }
@@ -189,12 +242,26 @@ void Game::update()
 {
     sf::Vector2i mousePos = sf::Mouse::getPosition(window);
     sf::Vector2f mousePosF = static_cast<sf::Vector2f>(mousePos);
-    if (currentState == PLAYING)
+    if (totalLives <= 0)
+    {
+        currentState = GAME_OVER;
+        return;
+    }
+    if (currentState == Heart_Playing)
     {
         heartGame.updatehover(mousePosF);
-        if (heartGame.shouldReturnToMenu())
+        if (heartGame.isWaiting && heartGame.transitionClock.getElapsedTime().asSeconds() >= 3.0f)
         {
-            currentState = LEVEL_SELECT;
+            if (!heartGame.wonRound) 
+            {
+                handleMiniGameLoss(); 
+            }
+            else
+            {
+                currentState = LEVEL_SELECT; 
+            }
+            heartGame.isWaiting = false;
+            heartGame.gameOver = false;
         }
     }
     else if (currentState == MENU)
@@ -204,7 +271,7 @@ void Game::update()
     }
     else if (currentState == LEVEL_SELECT)
     {
-        sf::Sprite* doors[] = { &gfx.door1, &gfx.door2, &gfx.door3 };
+        sf::Sprite* doors[] = { &gfx.door1, &gfx.door2, &gfx.door3, &gfx.door4 };
         for (auto d : doors)
         {
             if (d->getGlobalBounds().contains(mousePosF))
@@ -221,16 +288,48 @@ void Game::update()
     }
     if (currentState == PLAYING_DIAMOND)
     {
-        if (diamondGame.isComplete() && diamondGame.completionClock.getElapsedTime().asSeconds() >= 3.0f)
+        if (diamondGame.isWaitingToReturn && diamondGame.completionClock.getElapsedTime().asSeconds() >= 3.0f)
         {
-            currentState = LEVEL_SELECT; 
+            if (player.getHealth() <= 0) 
+            {
+                handleMiniGameLoss();  
+                currentState = LEVEL_SELECT;     
+            }
+            else
+            {
+                currentState = LEVEL_SELECT;
+            }
+            diamondGame.isWaitingToReturn = false;
+            diamondGame.challengeComplete = false;
+            player.heal(100);
+            diamondGame.startChallenge(player);
         }
     }
-    if (player.getHealth() <= 0) 
+    if (currentState == PLAYING_CLUB)
     {
-        cout << "GAME OVER!";
-        window.close(); 
+        if (clubGame.gameOver && clubGame.transitionClock.getElapsedTime().asSeconds() >= 3.0f)
+        {
+            if (clubGame.result == "FAILED!") 
+            {
+                handleMiniGameLoss(); 
+            }
+            else
+            {
+                currentState = LEVEL_SELECT;
+            }
+            clubGame.isWaitingToReturn = false;
+            clubGame.gameOver = false;
+        }
     }
+    if (currentState == GAME_OVER)
+    {
+        restartButton.updateVisuals(mousePos);// exit button ki
+        menuButton.updateVisuals(mousePos);
+    }
+    if (totalLives <= 0) {
+        currentState = GAME_OVER; 
+    }
+
 }
 void Game::render()
 {
@@ -250,15 +349,71 @@ void Game::render()
         window.draw(gfx.door1);
         window.draw(gfx.door2);
         window.draw(gfx.door3);
+        window.draw(gfx.door4);
+        gfx.drawLives(window, totalLives);
     }
-    else if (currentState == PLAYING) {
+    else if (currentState == Heart_Playing) {
         heartGame.render(window, player); 
     }
     else if (currentState == PLAYING_DIAMOND) 
     {
         diamondGame.render(window, player, playerInputString);
     }
+    else if (currentState == PLAYING_CLUB) 
+    {
+        clubGame.render(window);
+    }
+    else if (currentState == GAME_OVER)
+    {
+        window.draw(gameOverSprite);
+        window.draw(restartButton.box);
+        window.draw(restartButton.label);
+
+        window.draw(menuButton.box);
+        window.draw(menuButton.label);
+    }
     window.display();
+}
+void Game::handleMiniGameLoss() {
+    HealthSystem::applyFatalDamage(totalLives);
+    if (totalLives <= 0) {
+        cout << "GAME OVER! No lives left." << endl;
+        currentState = GAME_OVER;
+    }
+    else {
+        // Wapas level select ya main screen par bhej dein
+        currentState = LEVEL_SELECT;
+    }
+}
+int Game::getTotalLives() const
+{
+    return totalLives;
+}
+void Game::initGameOver() {
+    if (!gameOverTexture.loadFromFile("gameover.png"))
+    {
+        cout << "Error: Game Over image not found!" << endl;
+    }
+    else {
+        gameOverSprite.setTexture(gameOverTexture);
+        gameOverSprite.setScale(
+            1280.0f / gameOverSprite.getGlobalBounds().width,
+            720.0f / gameOverSprite.getGlobalBounds().height
+        );
+    }
+    restartButton.box.setSize(sf::Vector2f(200, 50));
+    restartButton.box.setPosition(300, 400);
+    restartButton.box.setFillColor(sf::Color(255, 0, 0, 150));
+    restartButton.label.setFont(gfx.font); 
+    restartButton.label.setString("Exit");
+    restartButton.label.setPosition(310, 405);
+
+    menuButton.box.setSize(sf::Vector2f(200, 50));
+    menuButton.box.setPosition(300, 500);
+    menuButton.box.setFillColor(sf::Color(0, 0, 255, 150));
+    menuButton.label.setFont(gfx.font);
+    menuButton.label.setString("Main Menu");
+    menuButton.label.setPosition(310, 505);
 }
 //heart class
 HeartGame::HeartGame() 
@@ -332,7 +487,7 @@ void HeartGame::updatehover(sf::Vector2f mousePos)
         }
     }
 }
-void HeartGame::handleClick(sf::Vector2f mousePos, Player& player)
+void HeartGame::handleClick(sf::Vector2f mousePos, Player& player, Game& gameInstance)
 {
     if (gameOver || isWaiting) 
         return; 
@@ -341,12 +496,14 @@ void HeartGame::handleClick(sf::Vector2f mousePos, Player& player)
         if (playerBoxes[i].getGlobalBounds().contains(mousePos))
         {
             if (i == imposterIndex)
+            {
                 message.setString("Correct! You found the liar.");
+                wonRound = true;
+            }
             else
             {
                 message.setString("Wrong! That person was innocent.");
-                HealthSystem::applyDamage(player, 20);
-                cout << "Health Reduced! Current Health: " << player.getHealth() << endl;
+                wonRound = false;
             }
 
             gameOver = true;
@@ -383,10 +540,10 @@ bool HeartGame::shouldReturnToMenu()
     }
     return false;
 }
+// diamond game ki logic
 Puzzle::Puzzle(const string& q, const string& ans, const string& h, int dmg)
     : questionText(q), correctAnswer(ans), hint(h), damageOnFail(dmg) {
 }
-// diamond game
 string Puzzle::normalize(const string& s) 
 {
     string res = s;
@@ -448,7 +605,12 @@ bool DiamondGame::submitAnswer(Player& player, const string& input)
     }
     else 
     {
-        HealthSystem::applyDamage(player, p->getDamage());
+        player.takeDamage(p->getDamage());
+        if (player.getHealth() <= 0) 
+        {
+            isWaitingToReturn = true;
+            completionClock.restart();
+        }
         return false;
     }
 }
@@ -582,4 +744,101 @@ void DiamondGame::loadVisuals(sf::Font& font)
     completeBox.setOutlineColor(sf::Color(0, 255, 0)); 
     completeBox.setOutlineThickness(3.0f);
     completeBox.setPosition(290.0f, 285.0f);
+}
+// club game ke functions
+ClubGame::ClubGame()
+    : p1(nullptr), p2(nullptr), p3(nullptr),
+    currentPlayer(0), roundNumber(0), maxRounds(5),
+    badRounds(0), maxBadRounds(3), syncPercent(50.0f),
+    gameOver(false), isWaitingToReturn(false)
+{
+    result = "";
+}
+void ClubGame::initPlayers(Player& a, Player& b, Player& c)
+{
+    p1 = &a; p2 = &b; p3 = &c;
+}
+
+void ClubGame::loadAssets(sf::Font& font) {
+    if (bgTex.loadFromFile("cluborg.png")) 
+    {
+        bgSprite.setTexture(bgTex);
+    }
+    // Button 1 (Left Red Button)
+    btnPress.setSize({ 130, 90 }); // Button ka size
+    btnPress.setPosition(310, 585); // Image ke left button ki exact location
+    btnPress.setFillColor(sf::Color(255, 0, 0, 0)); // Akhri '0' ka matlab hai invisible
+
+    // Button 2 (Middle Red Button)
+    btnHold.setSize({ 130, 90 });
+    btnHold.setPosition(480, 585);
+    btnHold.setFillColor(sf::Color(255, 0, 0, 0));
+
+    // Button 3 (Right Red Button)
+    btnRelease.setSize({ 130, 90 });
+    btnRelease.setPosition(650, 585);
+    btnRelease.setFillColor(sf::Color(255, 0, 0, 0));
+    syncBarBack.setSize({ 400, 30 });
+    syncBarBack.setPosition(440, 50);
+    syncBarBack.setFillColor(sf::Color(50, 50, 50));
+
+    syncBarFill.setPosition(440, 50);
+    syncBarFill.setFillColor(sf::Color::Green);
+
+    syncLabel.setFont(font);
+    syncLabel.setCharacterSize(25);
+    syncLabel.setPosition(560, 15);
+    btnPress.setTextureRect(sf::IntRect(0, 0, 0, 0)); // Image ki zaroorat nahi
+    btnPress.setPosition(315, 580); // Left button ki jagah
+    btnPress.setScale(100.0f, 100.0f); // Button ke size ke mutabiq area
+
+    btnHold.setPosition(485, 580); // Middle button
+    btnRelease.setPosition(655, 580); // Right button
+}
+
+void ClubGame::inputChoice(std::string choice) {
+    if (gameOver)
+        return;
+
+    p1->choice = choice;
+    // Simple NPC logic
+    std::string options[] = { "P", "H", "R" };
+    p2->choice = options[rand() % 3];
+    p3->choice = options[rand() % 3];
+
+    evaluateRound();
+}
+
+void ClubGame::render(sf::RenderWindow& window) 
+{
+    window.draw(bgSprite);
+    syncBarFill.setSize({ (syncPercent / 100.0f) * 400.0f, 30.0f });
+    window.draw(syncBarBack);
+    window.draw(syncBarFill);
+    window.draw(btnPress);
+    window.draw(btnHold);
+    window.draw(btnRelease);
+    syncLabel.setString("SYNC: " + std::to_string((int)syncPercent) + "%");
+    window.draw(syncLabel);
+    if (gameOver) {
+        syncLabel.setString(result); 
+        syncLabel.setPosition(540, 300); 
+        window.draw(syncLabel);
+    }
+}
+void ClubGame::evaluateRound() 
+{
+    if (p1->choice == p2->choice && p2->choice == p3->choice)
+        syncPercent += 15.0f;
+    else
+        syncPercent -= 10.0f;
+
+    if (syncPercent >= 100.0f || syncPercent <= 0.0f)
+    {
+        syncPercent = std::max(0.0f, std::min(100.0f, syncPercent));
+        gameOver = true;
+        isWaitingToReturn = true;
+        transitionClock.restart();
+        result = (syncPercent >= 100.0f) ? "SUCCESS!" : "FAILED!";
+    }
 }
