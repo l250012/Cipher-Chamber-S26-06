@@ -3,6 +3,9 @@
 #include <SFML/Graphics.hpp>
 #include <iostream>
 #include <vector>
+#include <string>
+#include <cstdlib>
+#include <ctime>
 using namespace std;
 class HeartGame;
 class Game;
@@ -16,10 +19,12 @@ private:
     int stamina;
 
 public:
+
     Player() : health(100), intelligence(50), stamina(50) {}
     void takeDamage(int dmg);
     void heal(int amount);
     int getHealth() const;
+    string choice; // club game ke liye
 };
 // 1. UI Component
 struct MenuButton {
@@ -39,12 +44,16 @@ public:
     sf::Texture bgMenuTex, bgLevelTex;
     sf::Sprite bgMenuSprite, bgLevelSprite;
 
-    sf::Texture doorTex1, doorTex2, doorTex3;
-    sf::Sprite door1, door2, door3;
+    sf::Texture doorTex1, doorTex2, doorTex3, doorTex4;
+    sf::Sprite door1, door2, door3, door4;
+    sf::Sprite lifeIconSprite;  
+    sf::Texture lifeTexture;
 
+    sf::Sprite gameOverSprite;
     GraphicsManager(); // Constructor
     void loadMenuAssets();
     void loadLevelAssets();
+    void drawLives(sf::RenderWindow& window, int lives);
 };
 // health class
 class HealthSystem 
@@ -52,6 +61,7 @@ class HealthSystem
 public:
     static void applyDamage(Player& player, int dmg);
     static void regenerate(Player& player);
+    static void applyFatalDamage(int& lives);
 };
 // heart ki class
 class HeartGame {
@@ -62,12 +72,9 @@ private:
     sf::RectangleShape playerBoxes[3];
     sf::Text boxTexts[3];
 
-    sf::Clock transitionClock; //time tracking ke liye
-    bool isWaiting = false;
     sf::Font font;
     sf::Text message;
     int imposterIndex;
-    bool gameOver;
     sf::RectangleShape healthBarBack;
     sf::RectangleShape healthBarFill;
 
@@ -75,9 +82,13 @@ public:
     HeartGame();
     void loadAssets();
     void updatehover(sf::Vector2f mousePos);
-    void handleClick(sf::Vector2f mousePos, Player& player);
+    void handleClick(sf::Vector2f mousePos, Player& player, Game& gameInstance);
     void render(sf::RenderWindow& window, Player&player);
     bool shouldReturnToMenu();
+    sf::Clock transitionClock; //time tracking ke liye
+    bool isWaiting = false;
+    bool gameOver = false;
+    bool wonRound = false;
 };
 //Diamond Game Classes
 class Puzzle 
@@ -134,7 +145,6 @@ class DiamondGame
 private:
     vector<Arena> arenas;
     int currentArenaIndex;
-    bool challengeComplete;
     void initArenas();
     sf::Text questionDisplay;
     sf::Text inputDisplay;
@@ -159,14 +169,50 @@ public:
     void render(sf::RenderWindow& window, Player& player, const string& currentInput);
     sf::Clock completionClock; // Time track karne ke liye
     bool isWaitingToReturn = false;
+    bool challengeComplete=false;
+    bool isDead = false;
 };
+// club game
+class ClubGame {
+private:
+   
+    Player* p1;
+    Player* p2;
+    Player* p3;
+    int currentPlayer;
+    int roundNumber;
+    int maxRounds;
+    int badRounds;
+    int maxBadRounds;
+    float syncPercent;
+public:
+    bool gameOver;
+    std::string result;
+    sf::Texture bgTex;
+    sf::Sprite bgSprite;
+    sf::Texture btnTex;
+    sf::RectangleShape btnPress, btnHold, btnRelease; // buttons ke liye
+    sf::RectangleShape syncBarBack;
+    sf::RectangleShape syncBarFill;
+    sf::Text syncLabel;
+    sf::Clock transitionClock;
+    bool isWaitingToReturn = false;
+    ClubGame();
+    void initPlayers(Player& player1, Player& player2, Player& player3);
+    void loadAssets(sf::Font& font);
+    void inputChoice(std::string choice);
+    void evaluateRound();
+    void render(sf::RenderWindow& window);
+};
+
 // 3. Game Class (Logic aur State handle karegi)
 class Game {
 private:
     sf::RenderWindow window;
-    enum GameState { MENU, LEVEL_SELECT, PLAYING, PLAYING_DIAMOND};
+    enum GameState { MENU, LEVEL_SELECT, Heart_Playing, PLAYING_DIAMOND, PLAYING_CLUB, GAME_OVER};
     GameState currentState;
-    GraphicsManager gfx; // Composition: GraphicsManager ka object
+    GraphicsManager gfx; 
+    int totalLives;
     HeartGame heartGame;
     string playerInputString;//for diamond game
     DiamondGame diamondGame;
@@ -175,10 +221,19 @@ private:
     void update();
     void render();
     Player player;
-    
+    ClubGame clubGame;
+    Player npc1, npc2;
 
 public:
     Game();
     void run();
+    void handleMiniGameLoss();
+    int getTotalLives() const;
+    void initGameOver();
+    void handleGameOverInput(sf::Vector2i mousePos);
+    sf::Sprite gameOverSprite;
+    sf::Texture gameOverTexture;
+    MenuButton restartButton;
+    MenuButton menuButton;
 };
 #endif
