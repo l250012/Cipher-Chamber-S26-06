@@ -133,10 +133,13 @@ Game::Game() : window(sf::VideoMode(1280, 720), "Cipher Chamber") ,totalLives(4)
 }
 void Game::run()
 {
-    while (window.isOpen()) 
+    sf::Clock clock; 
+    while (window.isOpen())
     {
+        sf::Time elapsed = clock.restart();
+        float dt = elapsed.asSeconds();
         processEvents();
-        update();
+        update(dt); 
         render();
     }
 }
@@ -148,7 +151,10 @@ void Game::processEvents()
         // 1. Window Close Logic
         if (event.type == sf::Event::Closed)
             window.close();
-
+        if (currentState == PLAYING_SPADE && event.type == sf::Event::KeyPressed)
+        {
+            spadeGame.handleInput(event.key.code);
+        }
         // 2. Keyboard Input (Sirf Diamond Game ke liye)
         if (currentState == PLAYING_DIAMOND && event.type == sf::Event::TextEntered)
         {
@@ -184,7 +190,7 @@ void Game::processEvents()
                 break;
 
             case LEVEL_SELECT:
-                // Door 1: Club Game (Spades Door)
+                // Door 1: Club Game 
                 if (gfx.door1.getGlobalBounds().contains(mousePosF)) {
                     clubGame.initPlayers(player, npc1, npc2); // Players link karein
                     clubGame.loadAssets(gfx.font);           // Assets load karein
@@ -201,6 +207,11 @@ void Game::processEvents()
                     diamondGame.loadVisuals(gfx.font);
                     playerInputString.clear();
                     currentState = PLAYING_DIAMOND;
+                }
+                else if (gfx.door4.getGlobalBounds().contains(mousePosF))
+                {
+                    spadeGame.initLevel(2); 
+                    currentState = PLAYING_SPADE; 
                 }
                 break;
 
@@ -232,13 +243,25 @@ void Game::processEvents()
                 }
             }
                 break;
+            case GAME_WIN:
+            {
+                if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
+                    sf::Vector2i mousePos = sf::Mouse::getPosition(window);
+                    if (invisibleMenuBtn.getGlobalBounds().contains(static_cast<sf::Vector2f>(mousePos))) {
+                        winPoints = 0;    
+                        totalLives = 4;     
+                        currentState = MENU; 
+                    }
+                }
+            }
+                break;
             default:
                 break;
             }
         }
     }
 }
-void Game::update()
+void Game::update(float dt)
 {
     sf::Vector2i mousePos = sf::Mouse::getPosition(window);
     sf::Vector2f mousePosF = static_cast<sf::Vector2f>(mousePos);
@@ -246,6 +269,32 @@ void Game::update()
     {
         currentState = GAME_OVER;
         return;
+    }
+    if (currentState == PLAYING_SPADE)
+    {
+        spadeGame.update(dt, player);
+        if (spadeGame.gameOver)
+        {
+            render();
+            sf::sleep(sf::seconds(2.0f));
+            if (spadeGame.wonRound)
+            {
+                winPoints++; 
+                if (winPoints >= 4)
+                    currentState = GAME_WIN;
+                else 
+                    currentState = LEVEL_SELECT;
+            }
+            else
+            {
+                totalLives--; 
+                if (totalLives <= 0)
+                    currentState = GAME_OVER;
+                else
+                    currentState = LEVEL_SELECT;
+            }
+            spadeGame.gameOver = false;
+        }
     }
     if (currentState == Heart_Playing)
     {
@@ -258,10 +307,17 @@ void Game::update()
             }
             else
             {
-                currentState = LEVEL_SELECT; 
+                winPoints++;
+                if (winPoints >= 4) 
+                    currentState = GAME_WIN;
+                else
+                {
+                    currentState = LEVEL_SELECT;
+                }
             }
             heartGame.isWaiting = false;
             heartGame.gameOver = false;
+            heartGame.wonRound = false;
         }
     }
     else if (currentState == MENU)
@@ -295,9 +351,13 @@ void Game::update()
                 handleMiniGameLoss();  
                 currentState = LEVEL_SELECT;     
             }
-            else
+            else if (diamondGame.challengeComplete)
             {
-                currentState = LEVEL_SELECT;
+                winPoints++; 
+                if (winPoints >= 4)
+                    currentState = GAME_WIN;
+                else 
+                    currentState = LEVEL_SELECT;
             }
             diamondGame.isWaitingToReturn = false;
             diamondGame.challengeComplete = false;
@@ -309,16 +369,20 @@ void Game::update()
     {
         if (clubGame.gameOver && clubGame.transitionClock.getElapsedTime().asSeconds() >= 3.0f)
         {
-            if (clubGame.result == "FAILED!") 
+            if (clubGame.result == "SUCCESS!")
             {
-                handleMiniGameLoss(); 
+                winPoints++;
+                if (winPoints >= 4)
+                    currentState = GAME_WIN;
+                else 
+                    currentState = LEVEL_SELECT;
             }
-            else
+            else 
             {
-                currentState = LEVEL_SELECT;
+                handleMiniGameLoss();
             }
-            clubGame.isWaitingToReturn = false;
             clubGame.gameOver = false;
+            clubGame.result = "";
         }
     }
     if (currentState == GAME_OVER)
@@ -329,7 +393,6 @@ void Game::update()
     if (totalLives <= 0) {
         currentState = GAME_OVER; 
     }
-
 }
 void Game::render()
 {
@@ -363,6 +426,10 @@ void Game::render()
     {
         clubGame.render(window);
     }
+    else if (currentState == PLAYING_SPADE)
+    {
+        spadeGame.draw(window);
+    }
     else if (currentState == GAME_OVER)
     {
         window.draw(gameOverSprite);
@@ -371,6 +438,11 @@ void Game::render()
 
         window.draw(menuButton.box);
         window.draw(menuButton.label);
+    }
+    else if (currentState == GAME_WIN)
+    {
+        window.draw(winScreenSprite);
+        window.draw(invisibleMenuBtn); 
     }
     window.display();
 }
@@ -414,6 +486,21 @@ void Game::initGameOver() {
     menuButton.label.setFont(gfx.font);
     menuButton.label.setString("Main Menu");
     menuButton.label.setPosition(310, 505);
+    // win game situtation mein
+    if (!winScreenTexture.loadFromFile("gameclear.png"))
+    {
+        cout << "Error: gameclear.png not found!" << endl;
+    }
+    else {
+        winScreenSprite.setTexture(winScreenTexture);
+        float scaleX = 1280.0f / winScreenTexture.getSize().x;
+        float scaleY = 720.0f / winScreenTexture.getSize().y;
+        winScreenSprite.setScale(scaleX, scaleY);
+        winScreenSprite.setPosition(0, 0); 
+    }
+    invisibleMenuBtn.setSize(sf::Vector2f(350.0f, 90.0f));
+    invisibleMenuBtn.setPosition(850.0f, 600.0f);
+    invisibleMenuBtn.setFillColor(sf::Color::Transparent);
 }
 //heart class
 HeartGame::HeartGame() 
@@ -425,8 +512,11 @@ HeartGame::HeartGame()
 }
 void HeartGame::loadAssets()
 {
+    srand((unsigned)time(0)); 
+    imposterIndex = rand() % 3;
     gameOver = false;   
     isWaiting = false;
+    wonRound = false;
     message.setString("");
     if (!bgTex.loadFromFile("heartorg.png"))
     {
@@ -756,28 +846,90 @@ ClubGame::ClubGame()
 }
 void ClubGame::initPlayers(Player& a, Player& b, Player& c)
 {
-    p1 = &a; p2 = &b; p3 = &c;
+    p1 = &a;
+    p2 = &b;
+    p3 = &c;
 }
 
-void ClubGame::loadAssets(sf::Font& font) {
-    if (bgTex.loadFromFile("cluborg.png")) 
+void ClubGame::loadAssets(sf::Font& font)
+{
+    if (bgTex.loadFromFile("cluborg.png"))
     {
         bgSprite.setTexture(bgTex);
     }
-    // Button 1 (Left Red Button)
-    btnPress.setSize({ 130, 90 }); // Button ka size
-    btnPress.setPosition(310, 585); // Image ke left button ki exact location
-    btnPress.setFillColor(sf::Color(255, 0, 0, 0)); // Akhri '0' ka matlab hai invisible
 
-    // Button 2 (Middle Red Button)
+    //  Buttons setup 
+    btnPress.setSize({ 130, 90 });
+    btnPress.setPosition(440, 530);
+    btnPress.setFillColor(sf::Color(255, 0, 0, 80)); 
+
     btnHold.setSize({ 130, 90 });
-    btnHold.setPosition(480, 585);
-    btnHold.setFillColor(sf::Color(255, 0, 0, 0));
+    btnHold.setPosition(640, 530);
+    btnHold.setFillColor(sf::Color(255, 0, 0, 80));
 
-    // Button 3 (Right Red Button)
     btnRelease.setSize({ 130, 90 });
-    btnRelease.setPosition(650, 585);
-    btnRelease.setFillColor(sf::Color(255, 0, 0, 0));
+    btnRelease.setPosition(840, 530);
+    btnRelease.setFillColor(sf::Color(255, 0, 0, 80));
+
+    //  Text Labels setup
+    pressText.setFont(font);
+    pressText.setString("PRESS");
+    pressText.setCharacterSize(18);
+    pressText.setFillColor(sf::Color::White);
+
+    holdText.setFont(font);
+    holdText.setString("HOLD");
+    holdText.setCharacterSize(18);
+    holdText.setFillColor(sf::Color::White);
+
+    releaseText.setFont(font);
+    releaseText.setString("RELEASE");
+    releaseText.setCharacterSize(18);
+    releaseText.setFillColor(sf::Color::White);
+    // Turn Info Setup
+    turnText.setFont(font);
+    turnText.setCharacterSize(22);
+    turnText.setFillColor(sf::Color::White);
+    turnText.setPosition(50, 50);
+
+    // Feedback Text Setup
+    feedbackText.setFont(font);
+    feedbackText.setCharacterSize(28);
+    feedbackText.setFillColor(sf::Color::Yellow);
+    feedbackText.setPosition(520, 120);
+
+    // Player Choices Text
+    p1Text.setFont(font); p2Text.setFont(font); p3Text.setFont(font);
+    p1Text.setPosition(270, 420);
+    p2Text.setPosition(570, 420);
+    p3Text.setPosition(830, 420);
+    p1Text.setCharacterSize(22);
+    p2Text.setCharacterSize(22);
+    p3Text.setCharacterSize(22);
+    p1Text.setFont(font);
+    p2Text.setFont(font);
+    p3Text.setFont(font);
+    p1Text.setStyle(sf::Text::Bold);
+    p2Text.setStyle(sf::Text::Bold);
+    p3Text.setStyle(sf::Text::Bold);
+
+    auto centerText = [](sf::Text& text, sf::RectangleShape& box)
+        {
+            sf::FloatRect bounds = text.getLocalBounds();
+            text.setOrigin(bounds.left + bounds.width / 2.0f,
+                bounds.top + bounds.height / 2.0f);
+
+            text.setPosition(
+                box.getPosition().x + box.getSize().x / 2.0f,
+                box.getPosition().y + box.getSize().y / 2.0f
+            );
+        };
+
+    centerText(pressText, btnPress);
+    centerText(holdText, btnHold);
+    centerText(releaseText, btnRelease);
+
+    //  Sync Bar setup
     syncBarBack.setSize({ 400, 30 });
     syncBarBack.setPosition(440, 50);
     syncBarBack.setFillColor(sf::Color(50, 50, 50));
@@ -788,12 +940,69 @@ void ClubGame::loadAssets(sf::Font& font) {
     syncLabel.setFont(font);
     syncLabel.setCharacterSize(25);
     syncLabel.setPosition(560, 15);
-    btnPress.setTextureRect(sf::IntRect(0, 0, 0, 0)); // Image ki zaroorat nahi
-    btnPress.setPosition(315, 580); // Left button ki jagah
-    btnPress.setScale(100.0f, 100.0f); // Button ke size ke mutabiq area
+    // result box 
+    resultBox.setSize({ 400.0f, 150.0f });
+    resultBox.setFillColor(sf::Color(0, 0, 0, 180));
+    resultBox.setOutlineThickness(2);
+    resultBox.setOutlineColor(sf::Color::White);
+    resultBox.setOrigin(resultBox.getSize().x / 2.0f, resultBox.getSize().y / 2.0f);
+    resultBox.setPosition(540, 300);
+}
 
-    btnHold.setPosition(485, 580); // Middle button
-    btnRelease.setPosition(655, 580); // Right button
+void ClubGame::render(sf::RenderWindow& window)
+{
+    window.draw(bgSprite);
+    // Draw Choices
+    p1Text.setString("YOU: " + p1->choice);
+    p2Text.setString("P2: " + p2->choice);
+    p3Text.setString("P3: " + p3->choice);
+    window.draw(p1Text); window.draw(p2Text); window.draw(p3Text);
+
+    // Draw Feedback (for 1.5 seconds)
+    if (showFeedback && feedbackClock.getElapsedTime().asSeconds() < 1.5f) 
+    {
+        feedbackText.setString(lastImpact);
+        window.draw(feedbackText);
+    }
+    // Update and Draw Sync Bar
+    syncBarFill.setSize({ (syncPercent / 100.0f) * 400.0f, 30.0f });
+    window.draw(syncBarBack);
+    window.draw(syncBarFill);
+    //  buttons draw kerne ke liye
+    window.draw(btnPress);
+    window.draw(btnHold);
+    window.draw(btnRelease);
+
+    //  text draw kerne ke liye
+    window.draw(pressText);
+    window.draw(holdText);
+    window.draw(releaseText);
+
+    // results show kerne ke liye
+    if (!gameOver)
+    {
+        syncLabel.setString("SYNC: " + std::to_string((int)syncPercent) + "%");
+        syncLabel.setPosition(560, 15);
+        syncLabel.setCharacterSize(25);
+        syncLabel.setFillColor(sf::Color::White);
+        window.draw(syncLabel);
+    }
+    else
+    {
+        resultBox.setPosition(650, 300); 
+        window.draw(resultBox);
+        syncLabel.setString(result);
+        syncLabel.setCharacterSize(50);
+        sf::FloatRect textRect = syncLabel.getLocalBounds();
+        syncLabel.setOrigin(textRect.left + textRect.width / 2.0f, textRect.top + textRect.height / 2.0f);
+        syncLabel.setPosition(650, 300);
+        if (result == "SUCCESS!")
+            syncLabel.setFillColor(sf::Color::Green);
+        else
+            syncLabel.setFillColor(sf::Color::Red);
+
+        window.draw(syncLabel);
+    }
 }
 
 void ClubGame::inputChoice(std::string choice) {
@@ -801,44 +1010,220 @@ void ClubGame::inputChoice(std::string choice) {
         return;
 
     p1->choice = choice;
-    // Simple NPC logic
+
     std::string options[] = { "P", "H", "R" };
-    p2->choice = options[rand() % 3];
-    p3->choice = options[rand() % 3];
+    int followChance = 55;
+    if ((rand() % 100) < followChance)
+        p2->choice = p1->choice;
+    else
+        p2->choice = options[rand() % 3];
+
+    if ((rand() % 100) < followChance)
+        p3->choice = p1->choice;
+    else
+        p3->choice = options[rand() % 3];
 
     evaluateRound();
 }
-
-void ClubGame::render(sf::RenderWindow& window) 
-{
-    window.draw(bgSprite);
-    syncBarFill.setSize({ (syncPercent / 100.0f) * 400.0f, 30.0f });
-    window.draw(syncBarBack);
-    window.draw(syncBarFill);
-    window.draw(btnPress);
-    window.draw(btnHold);
-    window.draw(btnRelease);
-    syncLabel.setString("SYNC: " + std::to_string((int)syncPercent) + "%");
-    window.draw(syncLabel);
-    if (gameOver) {
-        syncLabel.setString(result); 
-        syncLabel.setPosition(540, 300); 
-        window.draw(syncLabel);
-    }
-}
-void ClubGame::evaluateRound() 
-{
-    if (p1->choice == p2->choice && p2->choice == p3->choice)
-        syncPercent += 15.0f;
-    else
-        syncPercent -= 10.0f;
-
-    if (syncPercent >= 100.0f || syncPercent <= 0.0f)
+void ClubGame::evaluateRound() {
+    if (p1->choice == p2->choice && p2->choice == p3->choice) 
     {
-        syncPercent = std::max(0.0f, std::min(100.0f, syncPercent));
+        syncPercent += 10.0f; // Pehle 15 tha, ab 10 kiya (Jeetna thoda slow)
+        lastImpact = "PERFECT SYNC! +10";
+    }
+    else if (p1->choice == p2->choice || p1->choice == p3->choice || p2->choice == p3->choice) {
+        syncPercent += 2.0f; 
+        lastImpact = "PARTIAL SYNC! +2";
+    }
+    else 
+    {
+        syncPercent -= 20.0f; // Badi penalty! Aik galti aur 20% bar saaf
+        lastImpact = "TOTAL MISMATCH! -20";
+    }
+
+    showFeedback = true;
+    feedbackClock.restart();
+    syncPercent = std::max(0.0f, std::min(100.0f, syncPercent));
+    if (syncPercent >= 100.0f || syncPercent <= 0.0f) 
+    {
         gameOver = true;
         isWaitingToReturn = true;
         transitionClock.restart();
         result = (syncPercent >= 100.0f) ? "SUCCESS!" : "FAILED!";
+    }
+}
+//spade game ki logic
+SpadeGame::SpadeGame() : wonRound(false), gameOver(false), fontLoaded(false) {
+    if (font.loadFromFile("arial.ttf")) 
+    { 
+        fontLoaded = true;
+    }
+}
+
+void SpadeGame::initLevel(int difficulty) 
+{
+    cols = 10 + difficulty; 
+    rows = cols;
+    cellSize = 500.0f / cols; 
+    maze.clear();
+    maze.resize(rows, std::vector<MazeCell>(cols));
+    srand(static_cast<unsigned int>(time(0)));
+    generateMaze(0, 0);
+    playerPos = sf::Vector2i(0, 0);
+    goalPos = sf::Vector2i(cols - 1, rows - 1);
+    timeLimit = 25.0f;
+    timeLeft = timeLimit;
+    wonRound = false;
+    gameOver = false;
+    gameClock.restart();
+    if (spadeBgTex.loadFromFile("spadesbackground.png")) 
+    { 
+        spadeBgSprite.setTexture(spadeBgTex);
+        // Image ko 1280x720 ki screen par stretch karne ke liye:
+        spadeBgSprite.setScale(
+            1280.0f / spadeBgTex.getSize().x,
+            720.0f / spadeBgTex.getSize().y
+        );
+        spadeBgSprite.setTexture(spadeBgTex);
+    }
+}
+
+void SpadeGame::generateMaze(int x, int y) {
+    maze[y][x].visited = true;
+    int dirs[] = { 0, 1, 2, 3 }; // 0:Top, 1:Right, 2:Bottom, 3:Left
+
+    // Shuffle directions
+    for (int i = 0; i < 4; i++) {
+        int r = rand() % 4;
+        std::swap(dirs[i], dirs[r]);
+    }
+
+    for (int i = 0; i < 4; i++) {
+        int nx = x, ny = y;
+        if (dirs[i] == 0) ny--;
+        else if (dirs[i] == 1) nx++;
+        else if (dirs[i] == 2) ny++;
+        else if (dirs[i] == 3) nx--;
+
+        if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && !maze[ny][nx].visited) {
+            maze[y][x].walls[dirs[i]] = false;
+            maze[ny][nx].walls[(dirs[i] + 2) % 4] = false;
+            generateMaze(nx, ny);
+        }
+    }
+}
+
+void SpadeGame::handleInput(sf::Keyboard::Key key) {
+    if (gameOver) return;
+
+    if ((key == sf::Keyboard::W || key == sf::Keyboard::Up) && !maze[playerPos.y][playerPos.x].walls[0])
+        playerPos.y--;
+    else if ((key == sf::Keyboard::D || key == sf::Keyboard::Right) && !maze[playerPos.y][playerPos.x].walls[1])
+        playerPos.x++;
+    else if ((key == sf::Keyboard::S || key == sf::Keyboard::Down) && !maze[playerPos.y][playerPos.x].walls[2])
+        playerPos.y++;
+    else if ((key == sf::Keyboard::A || key == sf::Keyboard::Left) && !maze[playerPos.y][playerPos.x].walls[3])
+        playerPos.x--;
+
+    if (playerPos == goalPos) {
+        wonRound = true;
+        gameOver = true;
+    }
+}
+
+void SpadeGame::update(float dt, Player& player) {
+    if (!gameOver) {
+        timeLeft -= dt;
+        if (timeLeft <= 0) {
+            timeLeft = 0;
+            gameOver = true;
+            wonRound = false;
+        }
+    }
+}
+void SpadeGame::draw(sf::RenderWindow& window) {
+    // 1. Background draw (Ab ye poori screen cover karega)
+    window.draw(spadeBgSprite);
+
+    // 2. COORDINATES FIX (Background stretch hone ke baad ki values)
+    // In values ko maine aapki original image ke grid ke hisaab se adjust kiya hai
+    float offsetX = 305.0f;
+    float offsetY = 180.0f;
+    float totalMazeWidth = 670.0f;  // Grid ki poori width (right tak)
+    float totalMazeHeight = 410.0f; // Grid ki poori height
+
+    // Cell size calculate karein (rows aur cols ke mutabiq)
+    float cellW = totalMazeWidth / cols;
+    float cellH = totalMazeHeight / rows;
+
+    // 3. Maze ki Walls
+    for (int y = 0; y < rows; y++) {
+        for (int x = 0; x < cols; x++) {
+            float px = offsetX + x * cellW;
+            float py = offsetY + y * cellH;
+
+            sf::RectangleShape wall;
+            wall.setFillColor(sf::Color(255, 0, 0, 220)); // Bright Red
+
+            if (maze[y][x].walls[0]) { // Top
+                wall.setSize({ cellW, 2 });
+                wall.setPosition(px, py);
+                window.draw(wall);
+            }
+            if (maze[y][x].walls[1]) { // Right
+                wall.setSize({ 2, cellH });
+                wall.setPosition(px + cellW, py);
+                window.draw(wall);
+            }
+            if (maze[y][x].walls[2]) { // Bottom
+                wall.setSize({ cellW, 2 });
+                wall.setPosition(px, py + cellH);
+                window.draw(wall);
+            }
+            if (maze[y][x].walls[3]) { // Left
+                wall.setSize({ 2, cellH });
+                wall.setPosition(px, py);
+                window.draw(wall);
+            }
+        }
+    }
+
+    //  Goal (Yellow Square)
+    sf::RectangleShape goal(sf::Vector2f(cellW * 0.7f, cellH * 0.7f));
+    goal.setFillColor(sf::Color::Yellow);
+    goal.setOrigin(goal.getSize().x / 2.0f, goal.getSize().y / 2.0f);
+    goal.setPosition(offsetX + goalPos.x * cellW + cellW / 2.0f,
+        offsetY + goalPos.y * cellH + cellH / 2.0f);
+    window.draw(goal);
+
+    //  Player (Cyan Circle)
+    sf::CircleShape playerCircle(std::min(cellW, cellH) * 0.35f);
+    playerCircle.setFillColor(sf::Color::Cyan);
+    playerCircle.setOrigin(playerCircle.getRadius(), playerCircle.getRadius());
+    playerCircle.setPosition(offsetX + playerPos.x * cellW + cellW / 2.0f,
+        offsetY + playerPos.y * cellH + cellH / 2.0f);
+    window.draw(playerCircle);
+
+    //  UI: Timer aur Messages
+    if (fontLoaded) {
+        sf::Text timerText("Time: " + std::to_string((int)timeLeft), font, 35);
+        timerText.setPosition(50, 40);
+        timerText.setOutlineThickness(2);
+        timerText.setOutlineColor(sf::Color::Black);
+        window.draw(timerText);
+    }
+
+    if (gameOver) {
+        sf::RectangleShape overlay(sf::Vector2f(1280, 720));
+        overlay.setFillColor(sf::Color(0, 0, 0, 180));
+        window.draw(overlay);
+
+        sf::Text msg(wonRound ? "CHALLENGE COMPLETED" : "TIME OVER!", font, 75);
+        msg.setFillColor(wonRound ? sf::Color::Green : sf::Color::Red);
+        msg.setStyle(sf::Text::Bold);
+        sf::FloatRect tr = msg.getLocalBounds();
+        msg.setOrigin(tr.left + tr.width / 2.0f, tr.top + tr.height / 2.0f);
+        msg.setPosition(640, 360);
+        window.draw(msg);
     }
 }
