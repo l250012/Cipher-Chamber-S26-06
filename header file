@@ -4,6 +4,9 @@
 #include <iostream>
 #include <vector>
 #include <string>
+#include <cstdlib>
+#include <ctime>
+#include <stack>
 using namespace std;
 class HeartGame;
 class Game;
@@ -183,6 +186,13 @@ private:
     int badRounds;
     int maxBadRounds;
     float syncPercent;
+    sf::Text turnText;   
+    sf::Text feedbackText;   
+    std::string lastImpact;   
+    sf::Clock feedbackClock;  
+    bool showFeedback;        
+
+    sf::Text p1Text, p2Text, p3Text;
 public:
     bool gameOver;
     std::string result;
@@ -190,6 +200,10 @@ public:
     sf::Sprite bgSprite;
     sf::Texture btnTex;
     sf::RectangleShape btnPress, btnHold, btnRelease; // buttons ke liye
+    sf::Text pressText;
+    sf::Text holdText;
+    sf::Text releaseText;
+    sf::RectangleShape resultBox;
     sf::RectangleShape syncBarBack;
     sf::RectangleShape syncBarFill;
     sf::Text syncLabel;
@@ -202,25 +216,65 @@ public:
     void evaluateRound();
     void render(sf::RenderWindow& window);
 };
+// spade game
+struct MazeCell {
+    bool visited = false;
+    bool walls[4] = { true, true, true, true }; // Top, Right, Bottom, Left
+};
+class SpadeGame {
+private:
+    int cols, rows;
+    float cellSize;
+    std::vector<std::vector<MazeCell>> maze;
+    sf::Vector2i playerPos;
+    sf::Vector2i goalPos;
 
+    // Timer variables
+    sf::Clock gameClock;
+    float timeLimit;
+    float timeLeft;
+
+    // SFML Font/Text
+    sf::Font font;
+    bool fontLoaded;
+    sf::Texture spadeBgTex;
+    sf::Sprite spadeBgSprite;
+
+    void generateMaze(int x, int y);
+
+public:
+    SpadeGame();
+    void initLevel(int difficulty); // Level setup karne ke liye
+    void update(float dt, Player& player);
+    void handleInput(sf::Keyboard::Key key);
+    void draw(sf::RenderWindow& window);
+
+    bool wonRound;
+    bool gameOver;
+};
 // 3. Game Class (Logic aur State handle karegi)
 class Game {
 private:
     sf::RenderWindow window;
-    enum GameState { MENU, LEVEL_SELECT, Heart_Playing, PLAYING_DIAMOND, PLAYING_CLUB, GAME_OVER};
+    enum GameState { MENU, LEVEL_SELECT, Heart_Playing, PLAYING_SPADE, PLAYING_DIAMOND, PLAYING_CLUB, GAME_OVER, GAME_WIN};
     GameState currentState;
     GraphicsManager gfx; 
     int totalLives;
     HeartGame heartGame;
     string playerInputString;//for diamond game
     DiamondGame diamondGame;
+    SpadeGame spadeGame;
     //functions
     void processEvents();
-    void update();
+    void update(float dt);
     void render();
     Player player;
     ClubGame clubGame;
     Player npc1, npc2;
+    int winPoints = 0;
+    sf::Texture winScreenTexture;
+    sf::Sprite winScreenSprite;
+    sf::RectangleShape invisibleMenuBtn;
 
 public:
     Game();
